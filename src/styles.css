@@ -36,7 +36,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -150,6 +151,19 @@ button {
   color: #c7d1e8;
   font-size: 0.9rem;
   line-height: 1.6;
+}
+
+.text-action {
+  width: fit-content;
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #8fb1ff;
+  font-size: 0.86rem;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .workspace {
@@ -318,6 +332,53 @@ button {
   color: var(--primary-dark);
 }
 
+.task-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.task-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 10px;
+  border-radius: 14px;
+  background: var(--surface-muted);
+}
+
+.task-item button {
+  min-width: 58px;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--primary-dark);
+  font-size: 0.75rem;
+  font-weight: 850;
+}
+
+.task-item.is-done {
+  opacity: 0.68;
+}
+
+.task-item.is-done strong {
+  text-decoration: line-through;
+}
+
+.task-item strong,
+.task-item p {
+  margin: 0;
+}
+
+.task-item p {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -474,6 +535,41 @@ button {
 
 .card-heading span {
   color: var(--muted);
+}
+
+.stage-control {
+  display: grid;
+  grid-template-columns: auto minmax(180px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface-muted);
+}
+
+.stage-control span,
+.stage-control small {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.stage-control select,
+.pipeline-card select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #ffffff;
+  color: var(--text);
+  outline: none;
+}
+
+.stage-control select:focus,
+.pipeline-card select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(36, 84, 214, 0.12);
 }
 
 .tag-list {
@@ -657,6 +753,10 @@ button {
   font-weight: 750;
 }
 
+.pipeline-card select {
+  margin-top: 4px;
+}
+
 .empty-state {
   padding: 28px;
   border: 1px dashed var(--border);
@@ -713,7 +813,8 @@ button {
   }
 
   .metric-grid,
-  .detail-list {
+  .detail-list,
+  .stage-control {
     grid-template-columns: 1fr;
   }
 }

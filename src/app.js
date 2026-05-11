@@ -1,4 +1,4 @@
-import { activities, candidates, clients, jobs, pipelineStages, tasks } from "./data.js";
+import { activities, candidates as seedCandidates, clients, jobs, pipelineStages, tasks as seedTasks } from "./data.js";
 import {
   buildDashboard,
   formatSalary,
@@ -8,11 +8,21 @@ import {
   groupCandidatesByStage,
   searchRecords
 } from "./metrics.js";
+import {
+  createWorkspaceState,
+  hydrateWorkspaceState,
+  serializeWorkspaceState,
+  toggleTaskStatus,
+  updateCandidateStage
+} from "./workspaceState.js";
+
+const STORAGE_KEY = "talenthub-hrbc-workspace";
 
 const state = {
   view: "dashboard",
   query: "",
-  selectedJobId: jobs.find((job) => job.status === "open")?.id ?? jobs[0]?.id
+  selectedJobId: jobs.find((job) => job.status === "open")?.id ?? jobs[0]?.id,
+  ...loadWorkspaceState()
 };
 
 const navigation = [
@@ -22,6 +32,39 @@ const navigation = [
   { id: "clients", label: "企業", description: "契約・担当者管理" },
   { id: "pipeline", label: "パイプライン", description: "選考ステージ" }
 ];
+
+function loadWorkspaceState() {
+  const seedState = createWorkspaceState({ candidates: seedCandidates, tasks: seedTasks });
+  if (!globalThis.localStorage) {
+    return seedState;
+  }
+
+  try {
+    const savedState = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}");
+    return hydrateWorkspaceState(seedState, savedState);
+  } catch {
+    return seedState;
+  }
+}
+
+function saveWorkspaceState() {
+  if (!globalThis.localStorage) {
+    return;
+  }
+
+  localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify(serializeWorkspaceState({ candidates: state.candidates, tasks: state.tasks }))
+  );
+}
+
+function resetWorkspaceState() {
+  const seedState = createWorkspaceState({ candidates: seedCandidates, tasks: seedTasks });
+  state.candidates = seedState.candidates;
+  state.tasks = seedState.tasks;
+  globalThis.localStorage?.removeItem(STORAGE_KEY);
+  render();
+}
 
 function escapeHtml(value) {
   const replacements = {
@@ -63,6 +106,7 @@ function render() {
           <p class="eyebrow">今日の重点</p>
           <strong>推薦スピードを上げる</strong>
           <span>面接調整・条件確認・求人票更新を同じ画面で追跡します。</span>
+          <button class="text-action" type="button" data-reset-workspace>デモ状態をリセット</button>
         </div>
       </aside>
 
@@ -100,6 +144,8 @@ function bindShellEvents() {
     document.querySelector("#main-content").innerHTML = renderView();
     bindDynamicEvents();
   });
+
+  document.querySelector("[data-reset-workspace]").addEventListener("click", resetWorkspaceState);
 }
 
 function bindDynamicEvents() {
@@ -115,6 +161,28 @@ function bindDynamicEvents() {
       state.selectedJobId = button.dataset.jobId;
       document.querySelector("#main-content").innerHTML = renderView();
       bindDynamicEvents();
+    });
+  });
+
+  document.querySelectorAll("[data-stage-select]").forEach((select) => {
+    select.addEventListener("change", () => {
+      state.candidates = updateCandidateStage(
+        state.candidates,
+        select.dataset.candidateId,
+        select.value,
+        pipelineStages,
+        new Date().toISOString().slice(0, 10)
+      );
+      saveWorkspaceState();
+      render();
+    });
+  });
+
+  document.querySelectorAll("[data-task-toggle]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.tasks = toggleTaskStatus(state.tasks, button.dataset.taskId);
+      saveWorkspaceState();
+      render();
     });
   });
 }
@@ -136,9 +204,9 @@ function renderView() {
 }
 
 function renderDashboard() {
-  const dashboard = buildDashboard({ candidates, jobs, clients, tasks, stages: pipelineStages });
+  const dashboard = buildDashboard({ candidates: state.candidates, jobs, clients, tasks: state.tasks, stages: pipelineStages });
   const activeJobs = jobs.filter((job) => job.status === "open");
-  const groups = groupCandidatesByStage(candidates, pipelineStages);
+  const groups = groupCandidatesByStage(state.candidates, pipelineStages);
 
   return `
     <section class="hero-grid">
@@ -154,6 +222,10 @@ function renderDashboard() {
       <article class="next-card">
         <p class="eyebrow">次のアクション</p>
         ${activities.slice(0, 3).map(renderActivity).join("")}
+        <div class="task-list">
+          <p class="eyebrow">Open Tasks</p>
+          ${state.tasks.map(renderTaskItem).join("")}
+        </div>
       </article>
     </section>
 
@@ -207,7 +279,11 @@ function renderDashboard() {
 }
 
 function renderCandidates() {
-  const filteredCandidates = searchRecords(candidates, ["name", "title", "status", "owner", "source", "location", "skills", "summary"], state.query);
+  const filteredCandidates = searchRecords(
+    state.candidates,
+    ["name", "title", "status", "owner", "source", "location", "skills", "summary"],
+    state.query
+  );
 
   return `
     <section class="section-heading">
@@ -230,7 +306,7 @@ function renderJobs() {
   }));
   const filteredJobs = searchRecords(searchableJobs, ["title", "clientName", "status", "priority", "location", "owner", "requiredSkills", "description"], state.query);
   const selectedJob = filteredJobs.find((job) => job.id === state.selectedJobId) ?? filteredJobs[0] ?? searchableJobs[0];
-  const matches = selectedJob ? getRecommendedCandidates(selectedJob, candidates, 4) : [];
+  const matches = selectedJob ? getRecommendedCandidates(selectedJob, state.candidates, 4) : [];
 
   return `
     <section class="jobs-layout">
@@ -283,7 +359,7 @@ function renderClients() {
 }
 
 function renderPipeline() {
-  const groups = groupCandidatesByStage(candidates, pipelineStages);
+  const groups = groupCandidatesByStage(state.candidates, pipelineStages);
 
   return `
     <section class="section-heading">
@@ -335,8 +411,35 @@ function renderActivity(activity) {
   `;
 }
 
+function renderTaskItem(task) {
+  const isDone = task.status === "done";
+
+  return `
+    <div class="task-item ${isDone ? "is-done" : ""}">
+      <button type="button" data-task-toggle data-task-id="${escapeHtml(task.id)}" aria-pressed="${isDone}">
+        ${isDone ? "完了" : "未完了"}
+      </button>
+      <div>
+        <strong>${escapeHtml(task.title)}</strong>
+        <p>${escapeHtml(task.due)} / ${escapeHtml(task.owner)}</p>
+      </div>
+    </div>
+  `;
+}
+
+function renderStageOptions(selectedStageId) {
+  return pipelineStages
+    .map(
+      (stage) => `
+        <option value="${escapeHtml(stage.id)}" ${stage.id === selectedStageId ? "selected" : ""}>${escapeHtml(stage.label)}</option>
+      `
+    )
+    .join("");
+}
+
 function renderCandidateCard(candidate) {
   const recommendedJobs = getRecommendedJobs(candidate, jobs, 2);
+  const stage = pipelineStages.find((item) => item.id === candidate.stage);
 
   return `
     <article class="candidate-card">
@@ -348,6 +451,13 @@ function renderCandidateCard(candidate) {
         </div>
         <span class="status-pill">${escapeHtml(candidate.status)}</span>
       </div>
+      <label class="stage-control">
+        <span>選考ステージ</span>
+        <select data-stage-select data-candidate-id="${escapeHtml(candidate.id)}" aria-label="${escapeHtml(candidate.name)} の選考ステージ">
+          ${renderStageOptions(candidate.stage)}
+        </select>
+        <small>${escapeHtml(stage?.label ?? "未設定")}として保存中</small>
+      </label>
       <p>${escapeHtml(candidate.summary)}</p>
       <div class="tag-list">${candidate.skills.map((skill) => `<span>${escapeHtml(skill)}</span>`).join("")}</div>
       <dl class="detail-list">
@@ -466,6 +576,9 @@ function renderPipelineCard(candidate) {
       <span>${escapeHtml(candidate.title)}</span>
       <p>${escapeHtml(matchedJob?.title ?? "求人未設定")}</p>
       <small>${escapeHtml(candidate.nextAction)}</small>
+      <select data-stage-select data-candidate-id="${escapeHtml(candidate.id)}" aria-label="${escapeHtml(candidate.name)} のステージを変更">
+        ${renderStageOptions(candidate.stage)}
+      </select>
     </div>
   `;
 }
