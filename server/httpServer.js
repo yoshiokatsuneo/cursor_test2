@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { getWorkspace, setCandidateStage, toggleTask } from "./workspaceService.js";
+import { getWorkspace, setCandidateStage, toggleTask, updateCandidate, updateClient, updateJob } from "./workspaceService.js";
 
 const contentTypes = new Map([
   [".html", "text/html; charset=utf-8"],
@@ -103,6 +103,13 @@ export function createApp({ database, publicDir = fileURLToPath(new URL("..", im
         return;
       }
 
+      const candidateMatch = url.pathname.match(/^\/api\/candidates\/([^/]+)$/);
+      if (candidateMatch && request.method === "PATCH") {
+        await updateCandidate(database, candidateMatch[1], await readJsonBody(request));
+        sendJson(response, 200, await getWorkspace(database, url.searchParams.get("query") ?? ""));
+        return;
+      }
+
       const candidateStageMatch = url.pathname.match(/^\/api\/candidates\/([^/]+)\/stage$/);
       if (candidateStageMatch && request.method === "PATCH") {
         const body = await readJsonBody(request);
@@ -112,6 +119,20 @@ export function createApp({ database, publicDir = fileURLToPath(new URL("..", im
           body.stage,
           body.touchedAt ?? new Date().toISOString().slice(0, 10)
         );
+        sendJson(response, 200, await getWorkspace(database, url.searchParams.get("query") ?? ""));
+        return;
+      }
+
+      const jobMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)$/);
+      if (jobMatch && request.method === "PATCH") {
+        await updateJob(database, jobMatch[1], await readJsonBody(request));
+        sendJson(response, 200, await getWorkspace(database, url.searchParams.get("query") ?? ""));
+        return;
+      }
+
+      const clientMatch = url.pathname.match(/^\/api\/clients\/([^/]+)$/);
+      if (clientMatch && request.method === "PATCH") {
+        await updateClient(database, clientMatch[1], await readJsonBody(request));
         sendJson(response, 200, await getWorkspace(database, url.searchParams.get("query") ?? ""));
         return;
       }

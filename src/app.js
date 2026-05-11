@@ -43,6 +43,14 @@ function workspaceUrl() {
   return `/api/workspace${queryString ? `?${queryString}` : ""}`;
 }
 
+function withWorkspaceQuery(path) {
+  if (!state.query.trim()) {
+    return path;
+  }
+
+  return `${path}?${new URLSearchParams({ query: state.query.trim() }).toString()}`;
+}
+
 async function loadWorkspace() {
   state.loading = true;
   state.error = "";
@@ -79,8 +87,23 @@ async function refreshWorkspace() {
 }
 
 async function resetWorkspaceState() {
-  state.data = await apiRequest("/api/reset", { method: "POST", body: "{}" });
+  state.data = await apiRequest(withWorkspaceQuery("/api/reset"), { method: "POST", body: "{}" });
   applyDefaultSelections();
+  render();
+}
+
+async function mutateWorkspace(path, body = {}) {
+  try {
+    state.error = "";
+    state.data = await apiRequest(withWorkspaceQuery(path), {
+      method: "PATCH",
+      body: JSON.stringify(body)
+    });
+    applyDefaultSelections();
+  } catch (error) {
+    state.error = error.message;
+  }
+
   render();
 }
 
@@ -95,6 +118,70 @@ function formatSalary(min, max) {
     return `〜${max.toLocaleString("ja-JP")}万円`;
   }
   return "応相談";
+}
+
+function parseList(value) {
+  return String(value ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function formPayload(form) {
+  const formData = new FormData(form);
+  const payload = {};
+
+  for (const [key, value] of formData.entries()) {
+    if (key.endsWith("[]")) {
+      const normalizedKey = key.slice(0, -2);
+      payload[normalizedKey] = parseList(value);
+      continue;
+    }
+
+    if (form.elements[key]?.type === "number") {
+      payload[key] = Number(value);
+      continue;
+    }
+
+    payload[key] = value;
+  }
+
+  return payload;
+}
+
+function editInput({ label, name, value = "", type = "text", required = false }) {
+  return `
+    <label class="edit-field">
+      <span>${escapeHtml(label)}</span>
+      <input name="${escapeHtml(name)}" type="${escapeHtml(type)}" value="${escapeHtml(value)}" ${required ? "required" : ""} />
+    </label>
+  `;
+}
+
+function editTextarea({ label, name, value = "" }) {
+  return `
+    <label class="edit-field full-span">
+      <span>${escapeHtml(label)}</span>
+      <textarea name="${escapeHtml(name)}" rows="3">${escapeHtml(value)}</textarea>
+    </label>
+  `;
+}
+
+function editSelect({ label, name, value = "", options }) {
+  return `
+    <label class="edit-field">
+      <span>${escapeHtml(label)}</span>
+      <select name="${escapeHtml(name)}">
+        ${options
+          .map(
+            (option) => `
+              <option value="${escapeHtml(option.value)}" ${option.value === value ? "selected" : ""}>${escapeHtml(option.label)}</option>
+            `
+          )
+          .join("")}
+      </select>
+    </label>
+  `;
 }
 
 function escapeHtml(value) {
@@ -234,23 +321,20 @@ function bindDynamicEvents() {
 
   document.querySelectorAll("[data-stage-select]").forEach((select) => {
     select.addEventListener("change", async () => {
-      state.data = await apiRequest(`/api/candidates/${select.dataset.candidateId}/stage`, {
-        method: "PATCH",
-        body: JSON.stringify({ stage: select.value })
-      });
-      applyDefaultSelections();
-      render();
+      await mutateWorkspace(`/api/candidates/${select.dataset.candidateId}/stage`, { stage: select.value });
     });
   });
 
   document.querySelectorAll("[data-task-toggle]").forEach((button) => {
     button.addEventListener("click", async () => {
-      state.data = await apiRequest(`/api/tasks/${button.dataset.taskId}/toggle`, {
-        method: "PATCH",
-        body: "{}"
-      });
-      applyDefaultSelections();
-      render();
+      await mutateWorkspace(`/api/tasks/${button.dataset.taskId}/toggle`);
+    });
+  });
+
+  document.querySelectorAll("[data-edit-form]").forEach((form) => {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      await mutateWorkspace(form.dataset.endpoint, formPayload(form));
     });
   });
 }
@@ -690,6 +774,24 @@ function renderCandidateDetail(candidate) {
       </select>
       <small>${escapeHtml(getStageLabel(candidate.stage))}</small>
     </label>
+    <form class="edit-form" data-edit-form data-endpoint="/api/candidates/${escapeHtml(candidate.id)}">
+      <div class="edit-form-heading">
+        <h4>候補者編集</h4>
+        <button type="submit">保存</button>
+      </div>
+      <div class="edit-grid">
+        ${editInput({ label: "氏名", name: "name", value: candidate.name, required: true })}
+        ${editInput({ label: "職種", name: "title", value: candidate.title })}
+        ${editInput({ label: "担当", name: "owner", value: candidate.owner })}
+        ${editInput({ label: "流入経路", name: "source", value: candidate.source })}
+        ${editInput({ label: "所在地", name: "location", value: candidate.location })}
+        ${editInput({ label: "希望年収", name: "desiredSalary", value: candidate.desiredSalary, type: "number" })}
+        ${editInput({ label: "入社可能", name: "availability", value: candidate.availability })}
+        ${editInput({ label: "スキル（カンマ区切り）", name: "skills[]", value: candidate.skills.join(", ") })}
+        ${editTextarea({ label: "職務要約", name: "summary", value: candidate.summary })}
+        ${editTextarea({ label: "次アクション", name: "nextAction", value: candidate.nextAction })}
+      </div>
+    </form>
     <div class="detail-fieldset">
       <h4>基本情報</h4>
       <dl class="detail-list vertical">
@@ -795,6 +897,43 @@ function renderJobDetail(job, matches) {
       <span class="status-pill">${escapeHtml(job.status)}</span>
     </div>
     <p class="detail-copy">${escapeHtml(job.description)}</p>
+    <form class="edit-form" data-edit-form data-endpoint="/api/jobs/${escapeHtml(job.id)}">
+      <div class="edit-form-heading">
+        <h4>求人編集</h4>
+        <button type="submit">保存</button>
+      </div>
+      <div class="edit-grid">
+        ${editInput({ label: "求人名", name: "title", value: job.title, required: true })}
+        ${editSelect({
+          label: "ステータス",
+          name: "status",
+          value: job.status,
+          options: [
+            { value: "open", label: "open" },
+            { value: "paused", label: "paused" },
+            { value: "closed", label: "closed" }
+          ]
+        })}
+        ${editSelect({
+          label: "優先度",
+          name: "priority",
+          value: job.priority,
+          options: [
+            { value: "A", label: "A" },
+            { value: "B", label: "B" },
+            { value: "C", label: "C" }
+          ]
+        })}
+        ${editInput({ label: "勤務地", name: "location", value: job.location })}
+        ${editInput({ label: "年収下限", name: "salaryMin", value: job.salaryMin, type: "number" })}
+        ${editInput({ label: "年収上限", name: "salaryMax", value: job.salaryMax, type: "number" })}
+        ${editInput({ label: "募集人数", name: "positions", value: job.positions, type: "number" })}
+        ${editInput({ label: "担当", name: "owner", value: job.owner })}
+        ${editInput({ label: "必須スキル（カンマ区切り）", name: "requiredSkills[]", value: job.requiredSkills.join(", ") })}
+        ${editTextarea({ label: "今週の目標", name: "stageGoal", value: job.stageGoal })}
+        ${editTextarea({ label: "求人説明", name: "description", value: job.description })}
+      </div>
+    </form>
     <dl class="detail-list vertical">
       <div><dt>年収</dt><dd>${formatSalary(job.salaryMin, job.salaryMax)}</dd></div>
       <div><dt>担当</dt><dd>${escapeHtml(job.owner)}</dd></div>
@@ -833,6 +972,29 @@ function renderClientCard(client) {
         <span class="health ${escapeHtml(client.health)}">${client.health === "high" ? "良好" : "要確認"}</span>
       </div>
       <p>${escapeHtml(client.memo)}</p>
+      <form class="edit-form" data-edit-form data-endpoint="/api/clients/${escapeHtml(client.id)}">
+        <div class="edit-form-heading">
+          <h4>企業編集</h4>
+          <button type="submit">保存</button>
+        </div>
+        <div class="edit-grid">
+          ${editInput({ label: "企業名", name: "name", value: client.name, required: true })}
+          ${editInput({ label: "業界", name: "industry", value: client.industry })}
+          ${editInput({ label: "担当", name: "owner", value: client.owner })}
+          ${editInput({ label: "所在地", name: "location", value: client.location })}
+          ${editInput({ label: "契約条件", name: "contract", value: client.contract })}
+          ${editSelect({
+            label: "健全性",
+            name: "health",
+            value: client.health,
+            options: [
+              { value: "high", label: "良好" },
+              { value: "medium", label: "要確認" }
+            ]
+          })}
+          ${editTextarea({ label: "メモ", name: "memo", value: client.memo })}
+        </div>
+      </form>
       <div class="contact-list">
         ${client.contacts
           .map(

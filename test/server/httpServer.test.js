@@ -64,3 +64,51 @@ test("PATCH task toggle updates task status via API", async () => {
     assert.equal(payload.tasks.find((task) => task.id === "ta-001").status, "done");
   });
 });
+
+test("PATCH candidate updates editable fields via API", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/candidates/ca-001`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "中村 蓮 API", skills: ["Node.js", "Go"] })
+    });
+    const payload = await response.json();
+    const candidate = payload.candidates.find((item) => item.id === "ca-001");
+
+    assert.equal(response.status, 200);
+    assert.equal(candidate.name, "中村 蓮 API");
+    assert.deepEqual(candidate.skills, ["Node.js", "Go"]);
+  });
+});
+
+test("PATCH job updates editable fields via API", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/jobs/job-001`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "API バックエンドリード", salaryMin: 900 })
+    });
+    const payload = await response.json();
+    const job = payload.jobs.find((item) => item.id === "job-001");
+
+    assert.equal(response.status, 200);
+    assert.equal(job.title, "API バックエンドリード");
+    assert.equal(job.salaryMin, 900);
+  });
+});
+
+test("PATCH client updates editable fields via API", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/clients/cl-001`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ contract: "成功報酬 40%", health: "medium" })
+    });
+    const payload = await response.json();
+    const client = payload.clients.find((item) => item.id === "cl-001");
+
+    assert.equal(response.status, 200);
+    assert.equal(client.contract, "成功報酬 40%");
+    assert.equal(client.health, "medium");
+  });
+});

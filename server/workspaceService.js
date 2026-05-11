@@ -20,6 +20,33 @@ const jobSearchFields = [
 ];
 const clientSearchFields = ["name", "industry", "owner", "location", "contract", "contactNames", "memo"];
 
+const editableCandidateFields = new Set([
+  "name",
+  "title",
+  "owner",
+  "source",
+  "location",
+  "desiredSalary",
+  "availability",
+  "skills",
+  "summary",
+  "nextAction"
+]);
+const editableJobFields = new Set([
+  "title",
+  "status",
+  "priority",
+  "location",
+  "salaryMin",
+  "salaryMax",
+  "positions",
+  "owner",
+  "requiredSkills",
+  "stageGoal",
+  "description"
+]);
+const editableClientFields = new Set(["name", "industry", "owner", "location", "contract", "health", "memo"]);
+
 function enrichJobs(jobs, clients) {
   const clientsById = new Map(clients.map((client) => [client.id, client]));
 
@@ -124,4 +151,100 @@ export async function toggleTask(database, taskId) {
       tasks: toggleTaskStatus(current.tasks, taskId)
     };
   });
+}
+
+function pickEditableFields(payload, editableFields) {
+  return Object.fromEntries(
+    Object.entries(payload ?? {}).filter(([fieldName, value]) => editableFields.has(fieldName) && value !== undefined)
+  );
+}
+
+function normalizeStringList(value) {
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry).trim()).filter(Boolean);
+  }
+
+  return String(value ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function normalizeNumber(value, fieldName) {
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue) || numberValue < 0) {
+    throw Object.assign(new Error(`${fieldName} must be a non-negative number`), { statusCode: 400 });
+  }
+
+  return numberValue;
+}
+
+function normalizeCandidatePatch(payload) {
+  const patch = pickEditableFields(payload, editableCandidateFields);
+  if ("desiredSalary" in patch) {
+    patch.desiredSalary = normalizeNumber(patch.desiredSalary, "desiredSalary");
+  }
+  if ("skills" in patch) {
+    patch.skills = normalizeStringList(patch.skills);
+  }
+  return patch;
+}
+
+function normalizeJobPatch(payload) {
+  const patch = pickEditableFields(payload, editableJobFields);
+  for (const fieldName of ["salaryMin", "salaryMax", "positions"]) {
+    if (fieldName in patch) {
+      patch[fieldName] = normalizeNumber(patch[fieldName], fieldName);
+    }
+  }
+  if ("requiredSkills" in patch) {
+    patch.requiredSkills = normalizeStringList(patch.requiredSkills);
+  }
+  return patch;
+}
+
+function normalizeClientPatch(payload) {
+  return pickEditableFields(payload, editableClientFields);
+}
+
+function updateRecord(records, recordId, patch, recordName) {
+  let found = false;
+  const updatedRecords = records.map((record) => {
+    if (record.id !== recordId) {
+      return record;
+    }
+
+    found = true;
+    return {
+      ...record,
+      ...patch
+    };
+  });
+
+  if (!found) {
+    throw Object.assign(new Error(`${recordName} not found`), { statusCode: 404 });
+  }
+
+  return updatedRecords;
+}
+
+export async function updateCandidate(database, candidateId, payload) {
+  return database.update((current) => ({
+    ...current,
+    candidates: updateRecord(current.candidates, candidateId, normalizeCandidatePatch(payload), "Candidate")
+  }));
+}
+
+export async function updateJob(database, jobId, payload) {
+  return database.update((current) => ({
+    ...current,
+    jobs: updateRecord(current.jobs, jobId, normalizeJobPatch(payload), "Job")
+  }));
+}
+
+export async function updateClient(database, clientId, payload) {
+  return database.update((current) => ({
+    ...current,
+    clients: updateRecord(current.clients, clientId, normalizeClientPatch(payload), "Client")
+  }));
 }

@@ -1293,6 +1293,72 @@ body {
   background: #f8fafc;
 }
 
+.edit-form {
+  display: grid;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid #b8c7d7;
+  background: #fffdf7;
+}
+
+.edit-form-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.edit-form-heading h4 {
+  margin: 0;
+}
+
+.edit-form-heading button {
+  min-height: 28px;
+  padding: 0 12px;
+  border: 1px solid #b56f12;
+  border-radius: 3px;
+  background: linear-gradient(#ffbd63, #ec8c19);
+  color: #3b2404;
+  font-weight: 850;
+}
+
+.edit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.edit-field {
+  display: grid;
+  gap: 4px;
+}
+
+.edit-field span {
+  color: #53677c;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.edit-field input,
+.edit-field select,
+.edit-field textarea {
+  width: 100%;
+  min-height: 28px;
+  padding: 5px 7px;
+  border: 1px solid #b9c5d2;
+  border-radius: 2px;
+  background: #ffffff;
+  color: var(--text);
+}
+
+.edit-field textarea {
+  resize: vertical;
+}
+
+.full-span {
+  grid-column: 1 / -1;
+}
+
 .stage-control {
   grid-template-columns: 88px 1fr auto;
   border-radius: 3px;
@@ -1377,7 +1443,8 @@ body {
   }
 
   .search-box,
-  .stage-control {
+  .stage-control,
+  .edit-grid {
     grid-template-columns: 1fr;
   }
 
