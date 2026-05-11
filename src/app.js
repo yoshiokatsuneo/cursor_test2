@@ -1,30 +1,12 @@
-import { activities, candidates as seedCandidates, clients, jobs, pipelineStages, tasks as seedTasks } from "./data.js";
-import {
-  buildDashboard,
-  formatSalary,
-  getClientName,
-  getRecommendedCandidates,
-  getRecommendedJobs,
-  groupCandidatesByStage,
-  searchRecords
-} from "./metrics.js";
-import {
-  createWorkspaceState,
-  hydrateWorkspaceState,
-  serializeWorkspaceState,
-  toggleTaskStatus,
-  updateCandidateStage
-} from "./workspaceState.js";
-
-const STORAGE_KEY = "talenthub-hrbc-workspace";
-
 const state = {
   view: "dashboard",
   query: "",
-  selectedJobId: jobs.find((job) => job.status === "open")?.id ?? jobs[0]?.id,
-  selectedCandidateId: seedCandidates[0]?.id,
-  selectedClientId: clients[0]?.id,
-  ...loadWorkspaceState()
+  selectedJobId: "",
+  selectedCandidateId: "",
+  selectedClientId: "",
+  data: null,
+  loading: true,
+  error: ""
 };
 
 const navigation = [
@@ -35,37 +17,84 @@ const navigation = [
   { id: "pipeline", label: "パイプライン", description: "選考ステージ" }
 ];
 
-function loadWorkspaceState() {
-  const seedState = createWorkspaceState({ candidates: seedCandidates, tasks: seedTasks });
-  if (!globalThis.localStorage) {
-    return seedState;
+async function apiRequest(path, options = {}) {
+  const response = await fetch(path, {
+    headers: {
+      "content-type": "application/json",
+      ...(options.headers ?? {})
+    },
+    ...options
+  });
+
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error ?? "API request failed");
   }
 
+  return payload;
+}
+
+function workspaceUrl() {
+  const params = new URLSearchParams();
+  if (state.query.trim()) {
+    params.set("query", state.query.trim());
+  }
+  const queryString = params.toString();
+  return `/api/workspace${queryString ? `?${queryString}` : ""}`;
+}
+
+async function loadWorkspace() {
+  state.loading = true;
+  state.error = "";
+
   try {
-    const savedState = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}");
-    return hydrateWorkspaceState(seedState, savedState);
-  } catch {
-    return seedState;
+    state.data = await apiRequest(workspaceUrl());
+    applyDefaultSelections();
+  } catch (error) {
+    state.error = error.message;
+  } finally {
+    state.loading = false;
   }
 }
 
-function saveWorkspaceState() {
-  if (!globalThis.localStorage) {
+function applyDefaultSelections() {
+  if (!state.data) {
     return;
   }
 
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify(serializeWorkspaceState({ candidates: state.candidates, tasks: state.tasks }))
-  );
+  if (!state.data.jobs.some((job) => job.id === state.selectedJobId)) {
+    state.selectedJobId = state.data.jobs[0]?.id ?? "";
+  }
+  if (!state.data.candidates.some((candidate) => candidate.id === state.selectedCandidateId)) {
+    state.selectedCandidateId = state.data.candidates[0]?.id ?? "";
+  }
+  if (!state.data.clients.some((client) => client.id === state.selectedClientId)) {
+    state.selectedClientId = state.data.clients[0]?.id ?? "";
+  }
 }
 
-function resetWorkspaceState() {
-  const seedState = createWorkspaceState({ candidates: seedCandidates, tasks: seedTasks });
-  state.candidates = seedState.candidates;
-  state.tasks = seedState.tasks;
-  globalThis.localStorage?.removeItem(STORAGE_KEY);
+async function refreshWorkspace() {
+  await loadWorkspace();
   render();
+}
+
+async function resetWorkspaceState() {
+  state.data = await apiRequest("/api/reset", { method: "POST", body: "{}" });
+  applyDefaultSelections();
+  render();
+}
+
+function formatSalary(min, max) {
+  if (min && max) {
+    return `${min.toLocaleString("ja-JP")}〜${max.toLocaleString("ja-JP")}万円`;
+  }
+  if (min) {
+    return `${min.toLocaleString("ja-JP")}万円〜`;
+  }
+  if (max) {
+    return `〜${max.toLocaleString("ja-JP")}万円`;
+  }
+  return "応相談";
 }
 
 function escapeHtml(value) {
@@ -163,10 +192,9 @@ function bindShellEvents() {
   });
 
   const searchInput = document.querySelector("#global-search");
-  searchInput.addEventListener("input", (event) => {
+  searchInput.addEventListener("input", async (event) => {
     state.query = event.target.value;
-    document.querySelector("#main-content").innerHTML = renderView();
-    bindDynamicEvents();
+    await refreshWorkspace();
   });
 
   document.querySelector("[data-reset-workspace]").addEventListener("click", resetWorkspaceState);
@@ -205,29 +233,39 @@ function bindDynamicEvents() {
   });
 
   document.querySelectorAll("[data-stage-select]").forEach((select) => {
-    select.addEventListener("change", () => {
-      state.candidates = updateCandidateStage(
-        state.candidates,
-        select.dataset.candidateId,
-        select.value,
-        pipelineStages,
-        new Date().toISOString().slice(0, 10)
-      );
-      saveWorkspaceState();
+    select.addEventListener("change", async () => {
+      state.data = await apiRequest(`/api/candidates/${select.dataset.candidateId}/stage`, {
+        method: "PATCH",
+        body: JSON.stringify({ stage: select.value })
+      });
+      applyDefaultSelections();
       render();
     });
   });
 
   document.querySelectorAll("[data-task-toggle]").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.tasks = toggleTaskStatus(state.tasks, button.dataset.taskId);
-      saveWorkspaceState();
+    button.addEventListener("click", async () => {
+      state.data = await apiRequest(`/api/tasks/${button.dataset.taskId}/toggle`, {
+        method: "PATCH",
+        body: "{}"
+      });
+      applyDefaultSelections();
       render();
     });
   });
 }
 
 function renderView() {
+  if (state.loading && !state.data) {
+    return renderEmpty("バックエンドからデータを読み込み中です");
+  }
+  if (state.error) {
+    return renderEmpty(`バックエンドエラー: ${state.error}`);
+  }
+  if (!state.data) {
+    return renderEmpty("データがありません");
+  }
+
   switch (state.view) {
     case "candidates":
       return renderCandidates();
@@ -244,10 +282,7 @@ function renderView() {
 }
 
 function renderDashboard() {
-  const dashboard = buildDashboard({ candidates: state.candidates, jobs, clients, tasks: state.tasks, stages: pipelineStages });
-  const activeJobs = jobs.filter((job) => job.status === "open");
-  const groups = groupCandidatesByStage(state.candidates, pipelineStages);
-  const recentCandidates = [...state.candidates].sort((a, b) => b.lastTouch.localeCompare(a.lastTouch)).slice(0, 6);
+  const { dashboard, priorityJobs, recentCandidates, stageGroups, activities, tasks, stages } = state.data;
 
   return `
     <section class="porters-board">
@@ -289,7 +324,7 @@ function renderDashboard() {
                   <th>次アクション</th>
                 </tr>
               </thead>
-              <tbody>${recentCandidates.map(renderCandidateRow).join("")}</tbody>
+              <tbody>${recentCandidates.map((candidate) => renderCandidateRow(candidate)).join("")}</tbody>
             </table>
           </div>
         </article>
@@ -300,7 +335,7 @@ function renderDashboard() {
             <span>activity / task</span>
           </div>
           ${activities.slice(0, 3).map(renderActivity).join("")}
-          <div class="task-list">${state.tasks.map(renderTaskItem).join("")}</div>
+          <div class="task-list">${tasks.map(renderTaskItem).join("")}</div>
         </aside>
       </div>
 
@@ -311,13 +346,13 @@ function renderDashboard() {
             <span>phase summary</span>
           </div>
           <div class="stage-summary">
-            ${pipelineStages
+            ${stages
               .map(
                 (stage) => `
                   <div class="stage-row">
                     <span>${escapeHtml(stage.label)}</span>
-                    <strong>${groups[stage.id].length}</strong>
-                    <div class="bar"><span style="width: ${Math.max(groups[stage.id].length * 18, 8)}%"></span></div>
+                    <strong>${stageGroups[stage.id].length}</strong>
+                    <div class="bar"><span style="width: ${Math.max(stageGroups[stage.id].length * 18, 8)}%"></span></div>
                   </div>
                 `
               )
@@ -328,7 +363,7 @@ function renderDashboard() {
         <article class="record-panel">
           <div class="panel-heading">
             <h4>優先求人</h4>
-            <span>${activeJobs.length} open</span>
+            <span>${priorityJobs.length} open</span>
           </div>
           <div class="table-scroller">
             <table class="record-table compact">
@@ -341,10 +376,7 @@ function renderDashboard() {
                 </tr>
               </thead>
               <tbody>
-                ${activeJobs
-                  .slice(0, 4)
-                  .map((job) => renderJobRow({ ...job, clientName: getClientName(job.clientId, clients) }))
-                  .join("")}
+                ${priorityJobs.map((job) => renderJobRow(job)).join("")}
               </tbody>
             </table>
           </div>
@@ -355,11 +387,7 @@ function renderDashboard() {
 }
 
 function renderCandidates() {
-  const filteredCandidates = searchRecords(
-    state.candidates,
-    ["name", "title", "status", "owner", "source", "location", "skills", "summary"],
-    state.query
-  );
+  const filteredCandidates = state.data.candidates;
   const selectedCandidate =
     filteredCandidates.find((candidate) => candidate.id === state.selectedCandidateId) ?? filteredCandidates[0];
 
@@ -399,13 +427,9 @@ function renderCandidates() {
 }
 
 function renderJobs() {
-  const searchableJobs = jobs.map((job) => ({
-    ...job,
-    clientName: getClientName(job.clientId, clients)
-  }));
-  const filteredJobs = searchRecords(searchableJobs, ["title", "clientName", "status", "priority", "location", "owner", "requiredSkills", "description"], state.query);
-  const selectedJob = filteredJobs.find((job) => job.id === state.selectedJobId) ?? filteredJobs[0] ?? searchableJobs[0];
-  const matches = selectedJob ? getRecommendedCandidates(selectedJob, state.candidates, 4) : [];
+  const filteredJobs = state.data.jobs;
+  const selectedJob = filteredJobs.find((job) => job.id === state.selectedJobId) ?? filteredJobs[0];
+  const matches = selectedJob ? state.data.recommendations.byJob[selectedJob.id] ?? [] : [];
 
   return `
     <section class="record-workbench">
@@ -442,11 +466,7 @@ function renderJobs() {
 }
 
 function renderClients() {
-  const searchableClients = clients.map((client) => ({
-    ...client,
-    contactNames: client.contacts.map((contact) => contact.name).join(" ")
-  }));
-  const filteredClients = searchRecords(searchableClients, ["name", "industry", "owner", "location", "contract", "contactNames", "memo"], state.query);
+  const filteredClients = state.data.clients;
   const selectedClient = filteredClients.find((client) => client.id === state.selectedClientId) ?? filteredClients[0];
 
   return `
@@ -484,7 +504,7 @@ function renderClients() {
 }
 
 function renderPipeline() {
-  const groups = groupCandidatesByStage(state.candidates, pipelineStages);
+  const groups = state.data.stageGroups;
 
   return `
     <section class="section-heading">
@@ -495,7 +515,7 @@ function renderPipeline() {
       <span class="hint">ステージごとの滞留・次アクションを一覧化します。</span>
     </section>
     <section class="pipeline-board">
-      ${pipelineStages
+      ${state.data.stages
         .map(
           (stage) => `
             <article class="pipeline-column ${escapeHtml(stage.tone)}">
@@ -549,7 +569,7 @@ function renderEmptyRow(message, colspan) {
 }
 
 function getStageLabel(stageId) {
-  return pipelineStages.find((stage) => stage.id === stageId)?.label ?? "未設定";
+  return state.data?.stages.find((stage) => stage.id === stageId)?.label ?? "未設定";
 }
 
 function renderCandidateRow(candidate, selectedCandidateId = "") {
@@ -584,7 +604,7 @@ function renderJobRow(job, selectedJobId = "") {
         </button>
         <small>${escapeHtml(job.location)} / ${job.positions} 名</small>
       </td>
-      <td>${escapeHtml(job.clientName ?? getClientName(job.clientId, clients))}</td>
+      <td>${escapeHtml(job.clientName ?? "未設定")}</td>
       <td><span class="priority priority-${escapeHtml(job.priority.toLowerCase())}">優先度 ${escapeHtml(job.priority)}</span></td>
       <td><span class="status-pill">${escapeHtml(job.status)}</span></td>
       <td>${formatSalary(job.salaryMin, job.salaryMax)}</td>
@@ -642,7 +662,7 @@ function renderTaskItem(task) {
 }
 
 function renderStageOptions(selectedStageId) {
-  return pipelineStages
+  return (state.data?.stages ?? [])
     .map(
       (stage) => `
         <option value="${escapeHtml(stage.id)}" ${stage.id === selectedStageId ? "selected" : ""}>${escapeHtml(stage.label)}</option>
@@ -652,7 +672,7 @@ function renderStageOptions(selectedStageId) {
 }
 
 function renderCandidateDetail(candidate) {
-  const recommendedJobs = getRecommendedJobs(candidate, jobs, 3);
+  const recommendedJobs = state.data.recommendations.byCandidate[candidate.id] ?? [];
 
   return `
     <div class="detail-header">
@@ -691,7 +711,7 @@ function renderCandidateDetail(candidate) {
           .map(
             (job) => `
               <div class="match-row">
-                <span>${escapeHtml(job.title)} <small>${escapeHtml(getClientName(job.clientId, clients))}</small></span>
+                <span>${escapeHtml(job.title)} <small>${escapeHtml(job.clientName ?? "未設定")}</small></span>
                 <b>${job.matchScore}%</b>
               </div>
             `
@@ -704,8 +724,8 @@ function renderCandidateDetail(candidate) {
 }
 
 function renderCandidateCard(candidate) {
-  const recommendedJobs = getRecommendedJobs(candidate, jobs, 2);
-  const stage = pipelineStages.find((item) => item.id === candidate.stage);
+  const recommendedJobs = state.data.recommendations.byCandidate[candidate.id] ?? [];
+  const stage = state.data.stages.find((item) => item.id === candidate.stage);
 
   return `
     <article class="candidate-card">
@@ -769,7 +789,7 @@ function renderJobDetail(job, matches) {
   return `
     <div class="section-heading compact-heading">
       <div>
-        <p class="eyebrow">${escapeHtml(getClientName(job.clientId, clients))}</p>
+        <p class="eyebrow">${escapeHtml(job.clientName ?? "未設定")}</p>
         <h3>${escapeHtml(job.title)}</h3>
       </div>
       <span class="status-pill">${escapeHtml(job.status)}</span>
@@ -800,7 +820,7 @@ function renderJobDetail(job, matches) {
 }
 
 function renderClientCard(client) {
-  const clientJobs = jobs.filter((job) => job.clientId === client.id);
+  const clientJobs = client.relatedJobs ?? [];
 
   return `
     <article class="client-card">
@@ -834,7 +854,7 @@ function renderClientCard(client) {
 }
 
 function renderPipelineCard(candidate) {
-  const matchedJob = jobs.find((job) => candidate.matchedJobIds.includes(job.id));
+  const matchedJob = state.data.recommendations.byCandidate[candidate.id]?.[0];
 
   return `
     <div class="pipeline-card">
@@ -853,4 +873,4 @@ function renderEmpty(message) {
   return `<div class="empty-state">${escapeHtml(message)}</div>`;
 }
 
-render();
+await refreshWorkspace();
