@@ -3,7 +3,17 @@ import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { getWorkspace, setCandidateStage, toggleTask, updateCandidate, updateClient, updateJob } from "./workspaceService.js";
+import {
+  createCandidate,
+  createClient,
+  createJob,
+  getWorkspace,
+  setCandidateStage,
+  toggleTask,
+  updateCandidate,
+  updateClient,
+  updateJob
+} from "./workspaceService.js";
 
 const contentTypes = new Map([
   [".html", "text/html; charset=utf-8"],
@@ -103,6 +113,15 @@ export function createApp({ database, publicDir = fileURLToPath(new URL("..", im
         return;
       }
 
+      if (url.pathname === "/api/candidates" && request.method === "POST") {
+        const createdId = await createCandidate(database, await readJsonBody(request));
+        sendJson(response, 201, {
+          ...(await getWorkspace(database, url.searchParams.get("query") ?? "")),
+          created: { type: "candidate", id: createdId }
+        });
+        return;
+      }
+
       const candidateMatch = url.pathname.match(/^\/api\/candidates\/([^/]+)$/);
       if (candidateMatch && request.method === "PATCH") {
         await updateCandidate(database, candidateMatch[1], await readJsonBody(request));
@@ -123,10 +142,28 @@ export function createApp({ database, publicDir = fileURLToPath(new URL("..", im
         return;
       }
 
+      if (url.pathname === "/api/jobs" && request.method === "POST") {
+        const createdId = await createJob(database, await readJsonBody(request));
+        sendJson(response, 201, {
+          ...(await getWorkspace(database, url.searchParams.get("query") ?? "")),
+          created: { type: "job", id: createdId }
+        });
+        return;
+      }
+
       const jobMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)$/);
       if (jobMatch && request.method === "PATCH") {
         await updateJob(database, jobMatch[1], await readJsonBody(request));
         sendJson(response, 200, await getWorkspace(database, url.searchParams.get("query") ?? ""));
+        return;
+      }
+
+      if (url.pathname === "/api/clients" && request.method === "POST") {
+        const createdId = await createClient(database, await readJsonBody(request));
+        sendJson(response, 201, {
+          ...(await getWorkspace(database, url.searchParams.get("query") ?? "")),
+          created: { type: "client", id: createdId }
+        });
         return;
       }
 

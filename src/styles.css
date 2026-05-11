@@ -1301,6 +1301,15 @@ body {
   background: #fffdf7;
 }
 
+.notice-banner {
+  padding: 9px 12px;
+  border: 1px solid #86b99b;
+  border-radius: 3px;
+  background: #e9f8ef;
+  color: #1f6b3a;
+  font-weight: 850;
+}
+
 .edit-form-heading {
   display: flex;
   align-items: center;

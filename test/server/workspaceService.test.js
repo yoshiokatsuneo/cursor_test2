@@ -3,6 +3,9 @@ import test from "node:test";
 import { createSeedDatabase } from "../../server/database.js";
 import {
   buildWorkspaceView,
+  createCandidate,
+  createClient,
+  createJob,
   setCandidateStage,
   toggleTask,
   updateCandidate,
@@ -108,4 +111,53 @@ test("updateClient persists editable client fields", async () => {
   assert.equal(client.name, "株式会社クラウドリンク Edited");
   assert.equal(client.contract, "成功報酬 40%");
   assert.equal(client.memo, "更新済み");
+});
+
+test("createCandidate adds a new candidate record", async () => {
+  const database = createMemoryDatabase();
+
+  const createdId = await createCandidate(database, {
+    name: "新規 太郎",
+    skills: "JavaScript, Sales"
+  });
+  const updated = await database.read();
+  const candidate = updated.candidates.find((item) => item.id === createdId);
+
+  assert.equal(candidate.name, "新規 太郎");
+  assert.equal(candidate.stage, "sourcing");
+  assert.deepEqual(candidate.skills, ["JavaScript", "Sales"]);
+});
+
+test("createJob adds a new job record", async () => {
+  const database = createMemoryDatabase();
+
+  const createdId = await createJob(database, {
+    title: "新規求人",
+    clientId: "cl-001",
+    positions: "2",
+    requiredSkills: "Go, AWS"
+  });
+  const updated = await database.read();
+  const job = updated.jobs.find((item) => item.id === createdId);
+
+  assert.equal(job.title, "新規求人");
+  assert.equal(job.clientId, "cl-001");
+  assert.equal(job.positions, 2);
+  assert.deepEqual(job.requiredSkills, ["Go", "AWS"]);
+});
+
+test("createClient adds a new client record", async () => {
+  const database = createMemoryDatabase();
+
+  const createdId = await createClient(database, {
+    name: "新規クライアント",
+    industry: "Consulting",
+    health: "high"
+  });
+  const updated = await database.read();
+  const client = updated.clients.find((item) => item.id === createdId);
+
+  assert.equal(client.name, "新規クライアント");
+  assert.equal(client.industry, "Consulting");
+  assert.equal(client.health, "high");
 });

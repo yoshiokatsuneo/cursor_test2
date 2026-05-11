@@ -6,7 +6,9 @@ const state = {
   selectedClientId: "",
   data: null,
   loading: true,
-  error: ""
+  error: "",
+  notice: "",
+  createMode: ""
 };
 
 const navigation = [
@@ -88,18 +90,40 @@ async function refreshWorkspace() {
 
 async function resetWorkspaceState() {
   state.data = await apiRequest(withWorkspaceQuery("/api/reset"), { method: "POST", body: "{}" });
+  state.notice = "デモ DB を初期状態に戻しました";
   applyDefaultSelections();
   render();
 }
 
-async function mutateWorkspace(path, body = {}) {
+function applyCreatedSelection() {
+  const created = state.data?.created;
+  if (!created) {
+    return;
+  }
+
+  if (created.type === "candidate") {
+    state.selectedCandidateId = created.id;
+  }
+  if (created.type === "job") {
+    state.selectedJobId = created.id;
+  }
+  if (created.type === "client") {
+    state.selectedClientId = created.id;
+  }
+}
+
+async function mutateWorkspace(path, body = {}, options = {}) {
   try {
     state.error = "";
+    state.notice = "";
     state.data = await apiRequest(withWorkspaceQuery(path), {
-      method: "PATCH",
+      method: options.method ?? "PATCH",
       body: JSON.stringify(body)
     });
+    applyCreatedSelection();
     applyDefaultSelections();
+    state.createMode = "";
+    state.notice = options.notice ?? "保存しました";
   } catch (error) {
     state.error = error.message;
   }
@@ -260,7 +284,10 @@ function render() {
               <input id="global-search" type="search" value="${escapeHtml(state.query)}" placeholder="氏名、求人、企業、スキルで検索" />
             </label>
           </header>
-          <main id="main-content" class="content">${renderView()}</main>
+          <main id="main-content" class="content">
+            ${state.notice ? `<div class="notice-banner">${escapeHtml(state.notice)}</div>` : ""}
+            ${renderView()}
+          </main>
         </section>
       </div>
     </div>
@@ -297,6 +324,7 @@ function bindDynamicEvents() {
 
   document.querySelectorAll("[data-job-id]").forEach((button) => {
     button.addEventListener("click", () => {
+      state.createMode = "";
       state.selectedJobId = button.dataset.jobId;
       document.querySelector("#main-content").innerHTML = renderView();
       bindDynamicEvents();
@@ -305,6 +333,7 @@ function bindDynamicEvents() {
 
   document.querySelectorAll("[data-select-candidate-id]").forEach((button) => {
     button.addEventListener("click", () => {
+      state.createMode = "";
       state.selectedCandidateId = button.dataset.selectCandidateId;
       document.querySelector("#main-content").innerHTML = renderView();
       bindDynamicEvents();
@@ -313,6 +342,7 @@ function bindDynamicEvents() {
 
   document.querySelectorAll("[data-select-client-id]").forEach((button) => {
     button.addEventListener("click", () => {
+      state.createMode = "";
       state.selectedClientId = button.dataset.selectClientId;
       document.querySelector("#main-content").innerHTML = renderView();
       bindDynamicEvents();
@@ -334,7 +364,23 @@ function bindDynamicEvents() {
   document.querySelectorAll("[data-edit-form]").forEach((form) => {
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      await mutateWorkspace(form.dataset.endpoint, formPayload(form));
+      if (form.dataset.createType) {
+        state.query = "";
+      }
+      await mutateWorkspace(form.dataset.endpoint, formPayload(form), {
+        method: form.dataset.method ?? "PATCH",
+        notice: form.dataset.createType ? "追加しました" : "保存しました"
+      });
+    });
+  });
+
+  document.querySelectorAll("[data-create-record]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.notice = "";
+      state.error = "";
+      state.createMode = button.dataset.createRecord;
+      document.querySelector("#main-content").innerHTML = renderView();
+      bindDynamicEvents();
     });
   });
 }
@@ -478,7 +524,7 @@ function renderCandidates() {
   return `
     <section class="record-workbench">
       <article class="record-panel">
-        ${renderModuleToolbar("Candidate", `候補者 ${filteredCandidates.length} 件`, ["新規候補者", "推薦メール", "重複チェック", "CSV"])}
+        ${renderModuleToolbar("Candidate", `候補者 ${filteredCandidates.length} 件`, ["新規候補者", "推薦メール", "重複チェック", "CSV"], "candidate")}
         <div class="column-filter-row">
           <span>表示項目: 氏名 / フェーズ / 担当 / スキル / 希望年収 / 最終接点</span>
           <span>検索条件を保存</span>
@@ -504,7 +550,7 @@ function renderCandidates() {
       </article>
 
       <aside class="record-detail-panel">
-        ${selectedCandidate ? renderCandidateDetail(selectedCandidate) : renderEmpty("候補者を選択してください")}
+        ${state.createMode === "candidate" ? renderCandidateCreateForm() : selectedCandidate ? renderCandidateDetail(selectedCandidate) : renderEmpty("候補者を選択してください")}
       </aside>
     </section>
   `;
@@ -518,7 +564,7 @@ function renderJobs() {
   return `
     <section class="record-workbench">
       <article class="record-panel">
-        ${renderModuleToolbar("Job", `求人 ${filteredJobs.length} 件`, ["求人作成", "候補者検索", "求人票 PDF", "CSV"])}
+        ${renderModuleToolbar("Job", `求人 ${filteredJobs.length} 件`, ["求人作成", "候補者検索", "求人票 PDF", "CSV"], "job")}
         <div class="column-filter-row">
           <span>表示項目: 求人 / 企業 / 優先度 / ステータス / 年収 / 必須スキル</span>
           <span>OPEN の求人を優先表示</span>
@@ -543,7 +589,7 @@ function renderJobs() {
       </article>
 
       <aside class="record-detail-panel">
-        ${selectedJob ? renderJobDetail(selectedJob, matches) : renderEmpty("求人を選択してください")}
+        ${state.createMode === "job" ? renderJobCreateForm() : selectedJob ? renderJobDetail(selectedJob, matches) : renderEmpty("求人を選択してください")}
       </aside>
     </section>
   `;
@@ -556,7 +602,7 @@ function renderClients() {
   return `
     <section class="record-workbench">
       <article class="record-panel">
-        ${renderModuleToolbar("Client", `取引企業 ${filteredClients.length} 社`, ["企業追加", "担当者追加", "契約更新", "CSV"])}
+        ${renderModuleToolbar("Client", `取引企業 ${filteredClients.length} 社`, ["企業追加", "担当者追加", "契約更新", "CSV"], "client")}
         <div class="column-filter-row">
           <span>表示項目: 企業 / 業界 / 担当 / 地域 / 契約 / 求人数</span>
           <span>契約ステータス順</span>
@@ -581,7 +627,7 @@ function renderClients() {
       </article>
 
       <aside class="record-detail-panel">
-        ${selectedClient ? renderClientCard(selectedClient) : renderEmpty("企業を選択してください")}
+        ${state.createMode === "client" ? renderClientCreateForm() : selectedClient ? renderClientCard(selectedClient) : renderEmpty("企業を選択してください")}
       </aside>
     </section>
   `;
@@ -628,7 +674,7 @@ function renderMetric(label, value, description) {
   `;
 }
 
-function renderModuleToolbar(moduleName, recordCount, actions) {
+function renderModuleToolbar(moduleName, recordCount, actions, createType = "") {
   return `
     <div class="module-toolbar">
       <div>
@@ -636,7 +682,12 @@ function renderModuleToolbar(moduleName, recordCount, actions) {
         <h3>${escapeHtml(recordCount)}</h3>
       </div>
       <div class="toolbar-actions">
-        ${actions.map((action) => `<button type="button">${escapeHtml(action)}</button>`).join("")}
+        ${actions
+          .map(
+            (action, index) =>
+              `<button type="button" ${index === 0 && createType ? `data-create-record="${escapeHtml(createType)}"` : ""}>${escapeHtml(action)}</button>`
+          )
+          .join("")}
       </div>
     </div>
   `;
@@ -825,6 +876,36 @@ function renderCandidateDetail(candidate) {
   `;
 }
 
+function renderCandidateCreateForm() {
+  return `
+    <div class="detail-header">
+      <div>
+        <p class="eyebrow">New candidate</p>
+        <h3>候補者を追加</h3>
+        <span>保存すると DB に新しい候補者レコードを作成します。</span>
+      </div>
+    </div>
+    <form class="edit-form" data-edit-form data-create-type="candidate" data-method="POST" data-endpoint="/api/candidates">
+      <div class="edit-form-heading">
+        <h4>候補者追加</h4>
+        <button type="submit">追加</button>
+      </div>
+      <div class="edit-grid">
+        ${editInput({ label: "氏名", name: "name", value: "", required: true })}
+        ${editInput({ label: "職種", name: "title", value: "" })}
+        ${editInput({ label: "担当", name: "owner", value: "" })}
+        ${editInput({ label: "流入経路", name: "source", value: "手入力" })}
+        ${editInput({ label: "所在地", name: "location", value: "" })}
+        ${editInput({ label: "希望年収", name: "desiredSalary", value: 0, type: "number" })}
+        ${editInput({ label: "入社可能", name: "availability", value: "" })}
+        ${editInput({ label: "スキル（カンマ区切り）", name: "skills[]", value: "" })}
+        ${editTextarea({ label: "職務要約", name: "summary", value: "" })}
+        ${editTextarea({ label: "次アクション", name: "nextAction", value: "" })}
+      </div>
+    </form>
+  `;
+}
+
 function renderCandidateCard(candidate) {
   const recommendedJobs = state.data.recommendations.byCandidate[candidate.id] ?? [];
   const stage = state.data.stages.find((item) => item.id === candidate.stage);
@@ -905,6 +986,12 @@ function renderJobDetail(job, matches) {
       <div class="edit-grid">
         ${editInput({ label: "求人名", name: "title", value: job.title, required: true })}
         ${editSelect({
+          label: "企業",
+          name: "clientId",
+          value: job.clientId,
+          options: (state.data.allClients ?? state.data.clients).map((client) => ({ value: client.id, label: client.name }))
+        })}
+        ${editSelect({
           label: "ステータス",
           name: "status",
           value: job.status,
@@ -955,6 +1042,58 @@ function renderJobDetail(job, matches) {
           .join("") || renderEmpty("推薦できる候補者がまだいません")
       }
     </div>
+  `;
+}
+
+function renderJobCreateForm() {
+  const clientOptions = (state.data.allClients ?? state.data.clients).map((client) => ({ value: client.id, label: client.name }));
+
+  return `
+    <div class="detail-header">
+      <div>
+        <p class="eyebrow">New job</p>
+        <h3>求人を追加</h3>
+        <span>保存すると DB に新しい求人レコードを作成します。</span>
+      </div>
+    </div>
+    <form class="edit-form" data-edit-form data-create-type="job" data-method="POST" data-endpoint="/api/jobs">
+      <div class="edit-form-heading">
+        <h4>求人追加</h4>
+        <button type="submit">追加</button>
+      </div>
+      <div class="edit-grid">
+        ${editInput({ label: "求人名", name: "title", value: "", required: true })}
+        ${editSelect({ label: "企業", name: "clientId", value: clientOptions[0]?.value ?? "", options: clientOptions })}
+        ${editSelect({
+          label: "ステータス",
+          name: "status",
+          value: "open",
+          options: [
+            { value: "open", label: "open" },
+            { value: "paused", label: "paused" },
+            { value: "closed", label: "closed" }
+          ]
+        })}
+        ${editSelect({
+          label: "優先度",
+          name: "priority",
+          value: "B",
+          options: [
+            { value: "A", label: "A" },
+            { value: "B", label: "B" },
+            { value: "C", label: "C" }
+          ]
+        })}
+        ${editInput({ label: "勤務地", name: "location", value: "" })}
+        ${editInput({ label: "年収下限", name: "salaryMin", value: 0, type: "number" })}
+        ${editInput({ label: "年収上限", name: "salaryMax", value: 0, type: "number" })}
+        ${editInput({ label: "募集人数", name: "positions", value: 1, type: "number" })}
+        ${editInput({ label: "担当", name: "owner", value: "" })}
+        ${editInput({ label: "必須スキル（カンマ区切り）", name: "requiredSkills[]", value: "" })}
+        ${editTextarea({ label: "今週の目標", name: "stageGoal", value: "" })}
+        ${editTextarea({ label: "求人説明", name: "description", value: "" })}
+      </div>
+    </form>
   `;
 }
 
@@ -1012,6 +1151,41 @@ function renderClientCard(client) {
         ${clientJobs.map((job) => `<span>${escapeHtml(job.title)} (${escapeHtml(job.status)})</span>`).join("")}
       </div>
     </article>
+  `;
+}
+
+function renderClientCreateForm() {
+  return `
+    <div class="detail-header">
+      <div>
+        <p class="eyebrow">New client</p>
+        <h3>企業を追加</h3>
+        <span>保存すると DB に新しい企業レコードを作成します。</span>
+      </div>
+    </div>
+    <form class="edit-form" data-edit-form data-create-type="client" data-method="POST" data-endpoint="/api/clients">
+      <div class="edit-form-heading">
+        <h4>企業追加</h4>
+        <button type="submit">追加</button>
+      </div>
+      <div class="edit-grid">
+        ${editInput({ label: "企業名", name: "name", value: "", required: true })}
+        ${editInput({ label: "業界", name: "industry", value: "" })}
+        ${editInput({ label: "担当", name: "owner", value: "" })}
+        ${editInput({ label: "所在地", name: "location", value: "" })}
+        ${editInput({ label: "契約条件", name: "contract", value: "" })}
+        ${editSelect({
+          label: "健全性",
+          name: "health",
+          value: "medium",
+          options: [
+            { value: "high", label: "良好" },
+            { value: "medium", label: "要確認" }
+          ]
+        })}
+        ${editTextarea({ label: "メモ", name: "memo", value: "" })}
+      </div>
+    </form>
   `;
 }
 

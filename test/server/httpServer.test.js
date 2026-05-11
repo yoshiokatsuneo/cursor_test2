@@ -112,3 +112,54 @@ test("PATCH client updates editable fields via API", async () => {
     assert.equal(client.health, "medium");
   });
 });
+
+test("POST candidate creates a candidate via API", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/candidates`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "API 新規候補者", skills: "Node.js, AWS" })
+    });
+    const payload = await response.json();
+    const candidate = payload.candidates.find((item) => item.id === payload.created.id);
+
+    assert.equal(response.status, 201);
+    assert.equal(payload.created.type, "candidate");
+    assert.equal(candidate.name, "API 新規候補者");
+    assert.deepEqual(candidate.skills, ["Node.js", "AWS"]);
+  });
+});
+
+test("POST job creates a job via API", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/jobs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "API 新規求人", clientId: "cl-001", requiredSkills: ["Go"] })
+    });
+    const payload = await response.json();
+    const job = payload.jobs.find((item) => item.id === payload.created.id);
+
+    assert.equal(response.status, 201);
+    assert.equal(payload.created.type, "job");
+    assert.equal(job.title, "API 新規求人");
+    assert.equal(job.clientId, "cl-001");
+  });
+});
+
+test("POST client creates a client via API", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/clients`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "API 新規企業", industry: "AI" })
+    });
+    const payload = await response.json();
+    const client = payload.clients.find((item) => item.id === payload.created.id);
+
+    assert.equal(response.status, 201);
+    assert.equal(payload.created.type, "client");
+    assert.equal(client.name, "API 新規企業");
+    assert.equal(client.industry, "AI");
+  });
+});

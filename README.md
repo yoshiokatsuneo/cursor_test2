@@ -23,9 +23,12 @@ npm start
 ## バックエンド API
 
 - `GET /api/workspace?query=...` - 候補者、求人、企業、KPI、推薦候補をまとめて取得
+- `POST /api/candidates` - 候補者を追加
 - `PATCH /api/candidates/:id` - 候補者の主要項目を編集
 - `PATCH /api/candidates/:id/stage` - 候補者の選考フェーズを更新
+- `POST /api/jobs` - 求人を追加
 - `PATCH /api/jobs/:id` - 求人の主要項目を編集
+- `POST /api/clients` - 企業を追加
 - `PATCH /api/clients/:id` - 企業の主要項目を編集
 - `PATCH /api/tasks/:id/toggle` - タスクの完了/未完了を切り替え
 - `POST /api/reset` - デモ DB を初期状態に戻す

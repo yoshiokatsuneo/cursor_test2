@@ -41,6 +41,7 @@ const editableJobFields = new Set([
   "salaryMax",
   "positions",
   "owner",
+  "clientId",
   "requiredSkills",
   "stageGoal",
   "description"
@@ -97,6 +98,7 @@ export function buildWorkspaceView(databaseState, query = "") {
 
   return {
     stages: databaseState.stages,
+    allClients: enrichedClients,
     activities: databaseState.activities,
     tasks: databaseState.tasks,
     candidates: filteredCandidates,
@@ -228,6 +230,16 @@ function updateRecord(records, recordId, patch, recordName) {
   return updatedRecords;
 }
 
+function nextId(records, prefix) {
+  const nextNumber =
+    records
+      .map((record) => Number(String(record.id).replace(`${prefix}-`, "")))
+      .filter(Number.isFinite)
+      .reduce((max, current) => Math.max(max, current), 0) + 1;
+
+  return `${prefix}-${String(nextNumber).padStart(3, "0")}`;
+}
+
 export async function updateCandidate(database, candidateId, payload) {
   return database.update((current) => ({
     ...current,
@@ -247,4 +259,98 @@ export async function updateClient(database, clientId, payload) {
     ...current,
     clients: updateRecord(current.clients, clientId, normalizeClientPatch(payload), "Client")
   }));
+}
+
+export async function createCandidate(database, payload) {
+  let createdId = "";
+
+  await database.update((current) => {
+    createdId = nextId(current.candidates, "ca");
+    const patch = normalizeCandidatePatch(payload);
+    const candidate = {
+      id: createdId,
+      name: patch.name || "新規候補者",
+      title: patch.title || "未設定",
+      stage: "sourcing",
+      status: "接点化",
+      owner: patch.owner || "未設定",
+      source: patch.source || "手入力",
+      location: patch.location || "未設定",
+      desiredSalary: patch.desiredSalary ?? 0,
+      availability: patch.availability || "未設定",
+      lastTouch: new Date().toISOString().slice(0, 10),
+      skills: patch.skills ?? [],
+      desiredRoles: [],
+      matchedJobIds: [],
+      summary: patch.summary || "",
+      nextAction: patch.nextAction || "次アクションを設定"
+    };
+
+    return {
+      ...current,
+      candidates: [...current.candidates, candidate]
+    };
+  });
+
+  return createdId;
+}
+
+export async function createJob(database, payload) {
+  let createdId = "";
+
+  await database.update((current) => {
+    createdId = nextId(current.jobs, "job");
+    const patch = normalizeJobPatch(payload);
+    const job = {
+      id: createdId,
+      title: patch.title || "新規求人",
+      clientId: patch.clientId || current.clients[0]?.id || "",
+      status: patch.status || "open",
+      priority: patch.priority || "B",
+      location: patch.location || "未設定",
+      salaryMin: patch.salaryMin ?? 0,
+      salaryMax: patch.salaryMax ?? 0,
+      positions: patch.positions ?? 1,
+      owner: patch.owner || "未設定",
+      requiredSkills: patch.requiredSkills ?? [],
+      niceToHave: [],
+      stageGoal: patch.stageGoal || "推薦候補を確認",
+      description: patch.description || ""
+    };
+
+    return {
+      ...current,
+      jobs: [...current.jobs, job]
+    };
+  });
+
+  return createdId;
+}
+
+export async function createClient(database, payload) {
+  let createdId = "";
+
+  await database.update((current) => {
+    createdId = nextId(current.clients, "cl");
+    const patch = normalizeClientPatch(payload);
+    const client = {
+      id: createdId,
+      name: patch.name || "新規企業",
+      industry: patch.industry || "未設定",
+      owner: patch.owner || "未設定",
+      location: patch.location || "未設定",
+      contract: patch.contract || "未設定",
+      openJobs: 0,
+      health: patch.health || "medium",
+      contacts: [],
+      memo: patch.memo || ""
+    };
+
+    return {
+      ...current,
+      clients: [...current.clients, client]
+    };
+  });
+
+  return createdId;
 }
