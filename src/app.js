@@ -22,6 +22,8 @@ const state = {
   view: "dashboard",
   query: "",
   selectedJobId: jobs.find((job) => job.status === "open")?.id ?? jobs[0]?.id,
+  selectedCandidateId: seedCandidates[0]?.id,
+  selectedClientId: clients[0]?.id,
   ...loadWorkspaceState()
 };
 
@@ -81,48 +83,70 @@ function escapeHtml(value) {
 function render() {
   const app = document.querySelector("#app");
   app.innerHTML = `
-    <div class="app-shell">
-      <aside class="sidebar">
-        <div class="brand">
-          <div class="brand-mark">TH</div>
+    <div class="product-shell">
+      <header class="global-header">
+        <div class="global-brand">
+          <div class="brand-mark">P</div>
           <div>
-            <p class="eyebrow">Recruiting CRM</p>
-            <h1>TalentHub HRBC</h1>
+            <strong>PORTERS Style</strong>
+            <span>HR Business Cloud</span>
           </div>
         </div>
-        <nav class="navigation" aria-label="主要メニュー">
-          ${navigation
-            .map(
-              (item) => `
-                <button class="nav-item ${state.view === item.id ? "is-active" : ""}" data-view="${item.id}">
-                  <span>${escapeHtml(item.label)}</span>
-                  <small>${escapeHtml(item.description)}</small>
-                </button>
-              `
-            )
-            .join("")}
-        </nav>
-        <div class="sidebar-card">
-          <p class="eyebrow">今日の重点</p>
-          <strong>推薦スピードを上げる</strong>
-          <span>面接調整・条件確認・求人票更新を同じ画面で追跡します。</span>
-          <button class="text-action" type="button" data-reset-workspace>デモ状態をリセット</button>
+        <div class="global-tabs" aria-label="業務カテゴリ">
+          <span class="is-current">人材紹介</span>
+          <span>人材派遣</span>
+          <span>レポート</span>
+          <span>設定</span>
         </div>
-      </aside>
+        <div class="global-actions">
+          <button type="button">一括メール</button>
+          <button type="button">CSV 出力</button>
+          <button type="button">項目カスタマイズ</button>
+        </div>
+      </header>
 
-      <section class="workspace">
-        <header class="topbar">
-          <div>
-            <p class="eyebrow">PORTERS / HRBC 風プロトタイプ</p>
-            <h2>${escapeHtml(navigation.find((item) => item.id === state.view)?.label ?? "Dashboard")}</h2>
+      <div class="app-shell">
+        <aside class="sidebar">
+          <div class="brand">
+            <div>
+              <p class="eyebrow">Navigation</p>
+              <h1>TalentHub HRBC</h1>
+            </div>
           </div>
-          <label class="search-box">
-            <span>横断検索</span>
-            <input id="global-search" type="search" value="${escapeHtml(state.query)}" placeholder="候補者、求人、企業、スキルで検索" />
-          </label>
-        </header>
-        <main id="main-content" class="content">${renderView()}</main>
-      </section>
+          <nav class="navigation" aria-label="主要メニュー">
+            ${navigation
+              .map(
+                (item) => `
+                  <button class="nav-item ${state.view === item.id ? "is-active" : ""}" data-view="${item.id}">
+                    <span>${escapeHtml(item.label)}</span>
+                    <small>${escapeHtml(item.description)}</small>
+                  </button>
+                `
+              )
+              .join("")}
+          </nav>
+          <div class="sidebar-card">
+            <p class="eyebrow">View control</p>
+            <strong>Excel ライクな一覧管理</strong>
+            <span>列、フェーズ、担当者、次アクションを一覧から確認します。</span>
+            <button class="text-action" type="button" data-reset-workspace>デモ状態をリセット</button>
+          </div>
+        </aside>
+
+        <section class="workspace">
+          <header class="topbar">
+            <div>
+              <p class="eyebrow">PORTERS / HRBC 風プロトタイプ</p>
+              <h2>${escapeHtml(navigation.find((item) => item.id === state.view)?.label ?? "Dashboard")}</h2>
+            </div>
+            <label class="search-box">
+              <span>クイック検索</span>
+              <input id="global-search" type="search" value="${escapeHtml(state.query)}" placeholder="氏名、求人、企業、スキルで検索" />
+            </label>
+          </header>
+          <main id="main-content" class="content">${renderView()}</main>
+        </section>
+      </div>
     </div>
   `;
 
@@ -159,6 +183,22 @@ function bindDynamicEvents() {
   document.querySelectorAll("[data-job-id]").forEach((button) => {
     button.addEventListener("click", () => {
       state.selectedJobId = button.dataset.jobId;
+      document.querySelector("#main-content").innerHTML = renderView();
+      bindDynamicEvents();
+    });
+  });
+
+  document.querySelectorAll("[data-select-candidate-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.selectedCandidateId = button.dataset.selectCandidateId;
+      document.querySelector("#main-content").innerHTML = renderView();
+      bindDynamicEvents();
+    });
+  });
+
+  document.querySelectorAll("[data-select-client-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.selectedClientId = button.dataset.selectClientId;
       document.querySelector("#main-content").innerHTML = renderView();
       bindDynamicEvents();
     });
@@ -207,73 +247,109 @@ function renderDashboard() {
   const dashboard = buildDashboard({ candidates: state.candidates, jobs, clients, tasks: state.tasks, stages: pipelineStages });
   const activeJobs = jobs.filter((job) => job.status === "open");
   const groups = groupCandidatesByStage(state.candidates, pipelineStages);
+  const recentCandidates = [...state.candidates].sort((a, b) => b.lastTouch.localeCompare(a.lastTouch)).slice(0, 6);
 
   return `
-    <section class="hero-grid">
-      <article class="hero-card">
-        <p class="eyebrow">今月の採用進捗</p>
-        <h3>${dashboard.placedCount} 名決定 / ${dashboard.candidates} 名管理中</h3>
-        <p>候補者、求人、企業、活動履歴をひとつの業務台帳として扱うミニ CRM です。</p>
-        <div class="hero-actions">
-          <button class="primary-action" data-view="candidates">候補者を確認</button>
-          <button class="secondary-action" data-view="pipeline">パイプラインへ</button>
+    <section class="porters-board">
+      <div class="module-toolbar">
+        <div>
+          <p class="eyebrow">Home</p>
+          <h3>進捗サマリー</h3>
         </div>
-      </article>
-      <article class="next-card">
-        <p class="eyebrow">次のアクション</p>
-        ${activities.slice(0, 3).map(renderActivity).join("")}
-        <div class="task-list">
-          <p class="eyebrow">Open Tasks</p>
-          ${state.tasks.map(renderTaskItem).join("")}
+        <div class="toolbar-actions">
+          <button type="button" data-view="candidates">候補者一覧</button>
+          <button type="button" data-view="jobs">求人一覧</button>
+          <button type="button" data-view="pipeline">フェーズ確認</button>
         </div>
-      </article>
-    </section>
+      </div>
 
-    <section class="metric-grid" aria-label="主要 KPI">
-      ${renderMetric("稼働企業", `${dashboard.activeClients} 社`, "契約・担当者を管理")}
-      ${renderMetric("公開求人", `${dashboard.activeJobs} 件`, `${dashboard.openPositions} ポジション募集中`)}
-      ${renderMetric("面接中", `${dashboard.interviewCount} 名`, "日程調整と評価回収")}
-      ${renderMetric("決定率", `${dashboard.conversionRate}%`, "候補者全体に対する決定")}
-      ${renderMetric("未完了タスク", `${dashboard.openTasks} 件`, "本日の対応漏れを確認")}
-    </section>
+      <section class="metric-strip" aria-label="主要 KPI">
+        ${renderMetric("稼働企業", `${dashboard.activeClients} 社`, "Client")}
+        ${renderMetric("公開求人", `${dashboard.activeJobs} 件`, `${dashboard.openPositions} ポジション`)}
+        ${renderMetric("面接中", `${dashboard.interviewCount} 名`, "Interview")}
+        ${renderMetric("決定率", `${dashboard.conversionRate}%`, "Placement")}
+        ${renderMetric("未完了タスク", `${dashboard.openTasks} 件`, "Task")}
+      </section>
 
-    <section class="two-column">
-      <article class="panel">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Pipeline</p>
-            <h3>選考ステージ別の滞留</h3>
+      <div class="dashboard-grid">
+        <article class="record-panel">
+          <div class="panel-heading">
+            <h4>最近接点のあった候補者</h4>
+            <span>${recentCandidates.length} records</span>
           </div>
-        </div>
-        <div class="stage-summary">
-          ${pipelineStages
-            .map(
-              (stage) => `
-                <div class="stage-row">
-                  <span>${escapeHtml(stage.label)}</span>
-                  <strong>${groups[stage.id].length}</strong>
-                  <div class="bar"><span style="width: ${Math.max(groups[stage.id].length * 18, 8)}%"></span></div>
-                </div>
-              `
-            )
-            .join("")}
-        </div>
-      </article>
-
-      <article class="panel">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Priority Jobs</p>
-            <h3>優先案件</h3>
+          <div class="table-scroller">
+            <table class="record-table">
+              <thead>
+                <tr>
+                  <th>候補者</th>
+                  <th>フェーズ</th>
+                  <th>担当</th>
+                  <th>希望年収</th>
+                  <th>最終接点</th>
+                  <th>次アクション</th>
+                </tr>
+              </thead>
+              <tbody>${recentCandidates.map(renderCandidateRow).join("")}</tbody>
+            </table>
           </div>
-        </div>
-        <div class="job-list compact">
-          ${activeJobs
-            .slice(0, 4)
-            .map((job) => renderJobSummary(job, getClientName(job.clientId, clients)))
-            .join("")}
-        </div>
-      </article>
+        </article>
+
+        <aside class="record-panel">
+          <div class="panel-heading">
+            <h4>本日の業務キュー</h4>
+            <span>activity / task</span>
+          </div>
+          ${activities.slice(0, 3).map(renderActivity).join("")}
+          <div class="task-list">${state.tasks.map(renderTaskItem).join("")}</div>
+        </aside>
+      </div>
+
+      <div class="dashboard-grid">
+        <article class="record-panel">
+          <div class="panel-heading">
+            <h4>フェーズ別滞留</h4>
+            <span>phase summary</span>
+          </div>
+          <div class="stage-summary">
+            ${pipelineStages
+              .map(
+                (stage) => `
+                  <div class="stage-row">
+                    <span>${escapeHtml(stage.label)}</span>
+                    <strong>${groups[stage.id].length}</strong>
+                    <div class="bar"><span style="width: ${Math.max(groups[stage.id].length * 18, 8)}%"></span></div>
+                  </div>
+                `
+              )
+              .join("")}
+          </div>
+        </article>
+
+        <article class="record-panel">
+          <div class="panel-heading">
+            <h4>優先求人</h4>
+            <span>${activeJobs.length} open</span>
+          </div>
+          <div class="table-scroller">
+            <table class="record-table compact">
+              <thead>
+                <tr>
+                  <th>求人</th>
+                  <th>企業</th>
+                  <th>優先度</th>
+                  <th>年収</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${activeJobs
+                  .slice(0, 4)
+                  .map((job) => renderJobRow({ ...job, clientName: getClientName(job.clientId, clients) }))
+                  .join("")}
+              </tbody>
+            </table>
+          </div>
+        </article>
+      </div>
     </section>
   `;
 }
@@ -284,17 +360,40 @@ function renderCandidates() {
     ["name", "title", "status", "owner", "source", "location", "skills", "summary"],
     state.query
   );
+  const selectedCandidate =
+    filteredCandidates.find((candidate) => candidate.id === state.selectedCandidateId) ?? filteredCandidates[0];
 
   return `
-    <section class="section-heading">
-      <div>
-        <p class="eyebrow">Candidate Database</p>
-        <h3>候補者 ${filteredCandidates.length} 名</h3>
-      </div>
-      <span class="hint">スキル・担当者・進捗で即時検索できます。</span>
-    </section>
-    <section class="candidate-grid">
-      ${filteredCandidates.map(renderCandidateCard).join("") || renderEmpty("該当する候補者が見つかりません")}
+    <section class="record-workbench">
+      <article class="record-panel">
+        ${renderModuleToolbar("Candidate", `候補者 ${filteredCandidates.length} 件`, ["新規候補者", "推薦メール", "重複チェック", "CSV"])}
+        <div class="column-filter-row">
+          <span>表示項目: 氏名 / フェーズ / 担当 / スキル / 希望年収 / 最終接点</span>
+          <span>検索条件を保存</span>
+        </div>
+        <div class="table-scroller">
+          <table class="record-table">
+            <thead>
+              <tr>
+                <th>候補者</th>
+                <th>フェーズ</th>
+                <th>担当</th>
+                <th>スキル</th>
+                <th>希望年収</th>
+                <th>最終接点</th>
+                <th>次アクション</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredCandidates.map((candidate) => renderCandidateRow(candidate, selectedCandidate?.id)).join("") || renderEmptyRow("該当する候補者が見つかりません", 7)}
+            </tbody>
+          </table>
+        </div>
+      </article>
+
+      <aside class="record-detail-panel">
+        ${selectedCandidate ? renderCandidateDetail(selectedCandidate) : renderEmpty("候補者を選択してください")}
+      </aside>
     </section>
   `;
 }
@@ -309,28 +408,33 @@ function renderJobs() {
   const matches = selectedJob ? getRecommendedCandidates(selectedJob, state.candidates, 4) : [];
 
   return `
-    <section class="jobs-layout">
-      <div>
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Job Orders</p>
-            <h3>求人 ${filteredJobs.length} 件</h3>
-          </div>
+    <section class="record-workbench">
+      <article class="record-panel">
+        ${renderModuleToolbar("Job", `求人 ${filteredJobs.length} 件`, ["求人作成", "候補者検索", "求人票 PDF", "CSV"])}
+        <div class="column-filter-row">
+          <span>表示項目: 求人 / 企業 / 優先度 / ステータス / 年収 / 必須スキル</span>
+          <span>OPEN の求人を優先表示</span>
         </div>
-        <div class="job-list">
-          ${filteredJobs
-            .map(
-              (job) => `
-                <button class="job-card ${selectedJob?.id === job.id ? "is-selected" : ""}" data-job-id="${escapeHtml(job.id)}">
-                  ${renderJobSummary(job, job.clientName)}
-                </button>
-              `
-            )
-            .join("") || renderEmpty("該当する求人が見つかりません")}
+        <div class="table-scroller">
+          <table class="record-table">
+            <thead>
+              <tr>
+                <th>求人</th>
+                <th>企業</th>
+                <th>優先度</th>
+                <th>ステータス</th>
+                <th>年収</th>
+                <th>必須スキル</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredJobs.map((job) => renderJobRow(job, selectedJob?.id)).join("") || renderEmptyRow("該当する求人が見つかりません", 6)}
+            </tbody>
+          </table>
         </div>
-      </div>
+      </article>
 
-      <aside class="panel match-panel">
+      <aside class="record-detail-panel">
         ${selectedJob ? renderJobDetail(selectedJob, matches) : renderEmpty("求人を選択してください")}
       </aside>
     </section>
@@ -343,17 +447,38 @@ function renderClients() {
     contactNames: client.contacts.map((contact) => contact.name).join(" ")
   }));
   const filteredClients = searchRecords(searchableClients, ["name", "industry", "owner", "location", "contract", "contactNames", "memo"], state.query);
+  const selectedClient = filteredClients.find((client) => client.id === state.selectedClientId) ?? filteredClients[0];
 
   return `
-    <section class="section-heading">
-      <div>
-        <p class="eyebrow">Client CRM</p>
-        <h3>取引企業 ${filteredClients.length} 社</h3>
-      </div>
-      <span class="hint">求人、契約条件、担当者接点を企業単位で確認します。</span>
-    </section>
-    <section class="client-grid">
-      ${filteredClients.map(renderClientCard).join("") || renderEmpty("該当する企業が見つかりません")}
+    <section class="record-workbench">
+      <article class="record-panel">
+        ${renderModuleToolbar("Client", `取引企業 ${filteredClients.length} 社`, ["企業追加", "担当者追加", "契約更新", "CSV"])}
+        <div class="column-filter-row">
+          <span>表示項目: 企業 / 業界 / 担当 / 地域 / 契約 / 求人数</span>
+          <span>契約ステータス順</span>
+        </div>
+        <div class="table-scroller">
+          <table class="record-table">
+            <thead>
+              <tr>
+                <th>企業</th>
+                <th>業界</th>
+                <th>担当</th>
+                <th>地域</th>
+                <th>契約</th>
+                <th>求人</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredClients.map((client) => renderClientRow(client, selectedClient?.id)).join("") || renderEmptyRow("該当する企業が見つかりません", 6)}
+            </tbody>
+          </table>
+        </div>
+      </article>
+
+      <aside class="record-detail-panel">
+        ${selectedClient ? renderClientCard(selectedClient) : renderEmpty("企業を選択してください")}
+      </aside>
     </section>
   `;
 }
@@ -399,6 +524,95 @@ function renderMetric(label, value, description) {
   `;
 }
 
+function renderModuleToolbar(moduleName, recordCount, actions) {
+  return `
+    <div class="module-toolbar">
+      <div>
+        <p class="eyebrow">${escapeHtml(moduleName)} search result</p>
+        <h3>${escapeHtml(recordCount)}</h3>
+      </div>
+      <div class="toolbar-actions">
+        ${actions.map((action) => `<button type="button">${escapeHtml(action)}</button>`).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderEmptyRow(message, colspan) {
+  return `
+    <tr>
+      <td colspan="${colspan}">
+        <div class="empty-state compact-empty">${escapeHtml(message)}</div>
+      </td>
+    </tr>
+  `;
+}
+
+function getStageLabel(stageId) {
+  return pipelineStages.find((stage) => stage.id === stageId)?.label ?? "未設定";
+}
+
+function renderCandidateRow(candidate, selectedCandidateId = "") {
+  const isSelected = candidate.id === selectedCandidateId;
+
+  return `
+    <tr class="${isSelected ? "is-selected" : ""}">
+      <td>
+        <button class="record-link" type="button" data-select-candidate-id="${escapeHtml(candidate.id)}">
+          ${escapeHtml(candidate.name)}
+        </button>
+        <small>${escapeHtml(candidate.title)} / ${escapeHtml(candidate.source)}</small>
+      </td>
+      <td><span class="phase-badge">${escapeHtml(getStageLabel(candidate.stage))}</span></td>
+      <td>${escapeHtml(candidate.owner)}</td>
+      <td>${candidate.skills.slice(0, 3).map((skill) => `<span class="mini-tag">${escapeHtml(skill)}</span>`).join("")}</td>
+      <td>${candidate.desiredSalary.toLocaleString("ja-JP")}万円</td>
+      <td>${escapeHtml(candidate.lastTouch)}</td>
+      <td>${escapeHtml(candidate.nextAction)}</td>
+    </tr>
+  `;
+}
+
+function renderJobRow(job, selectedJobId = "") {
+  const isSelected = job.id === selectedJobId;
+
+  return `
+    <tr class="${isSelected ? "is-selected" : ""}">
+      <td>
+        <button class="record-link" type="button" data-job-id="${escapeHtml(job.id)}">
+          ${escapeHtml(job.title)}
+        </button>
+        <small>${escapeHtml(job.location)} / ${job.positions} 名</small>
+      </td>
+      <td>${escapeHtml(job.clientName ?? getClientName(job.clientId, clients))}</td>
+      <td><span class="priority priority-${escapeHtml(job.priority.toLowerCase())}">優先度 ${escapeHtml(job.priority)}</span></td>
+      <td><span class="status-pill">${escapeHtml(job.status)}</span></td>
+      <td>${formatSalary(job.salaryMin, job.salaryMax)}</td>
+      <td>${job.requiredSkills.slice(0, 3).map((skill) => `<span class="mini-tag">${escapeHtml(skill)}</span>`).join("")}</td>
+    </tr>
+  `;
+}
+
+function renderClientRow(client, selectedClientId = "") {
+  const isSelected = client.id === selectedClientId;
+
+  return `
+    <tr class="${isSelected ? "is-selected" : ""}">
+      <td>
+        <button class="record-link" type="button" data-select-client-id="${escapeHtml(client.id)}">
+          ${escapeHtml(client.name)}
+        </button>
+        <small>${escapeHtml(client.contacts[0]?.name ?? "担当者未設定")}</small>
+      </td>
+      <td>${escapeHtml(client.industry)}</td>
+      <td>${escapeHtml(client.owner)}</td>
+      <td>${escapeHtml(client.location)}</td>
+      <td>${escapeHtml(client.contract)}</td>
+      <td>${client.openJobs} 件</td>
+    </tr>
+  `;
+}
+
 function renderActivity(activity) {
   return `
     <div class="activity-item">
@@ -435,6 +649,58 @@ function renderStageOptions(selectedStageId) {
       `
     )
     .join("");
+}
+
+function renderCandidateDetail(candidate) {
+  const recommendedJobs = getRecommendedJobs(candidate, jobs, 3);
+
+  return `
+    <div class="detail-header">
+      <div>
+        <p class="eyebrow">Candidate detail</p>
+        <h3>${escapeHtml(candidate.name)}</h3>
+        <span>${escapeHtml(candidate.title)} / ${escapeHtml(candidate.location)}</span>
+      </div>
+      <span class="status-pill">${escapeHtml(candidate.status)}</span>
+    </div>
+    <label class="stage-control">
+      <span>選考フェーズ</span>
+      <select data-stage-select data-candidate-id="${escapeHtml(candidate.id)}" aria-label="${escapeHtml(candidate.name)} の選考ステージ">
+        ${renderStageOptions(candidate.stage)}
+      </select>
+      <small>${escapeHtml(getStageLabel(candidate.stage))}</small>
+    </label>
+    <div class="detail-fieldset">
+      <h4>基本情報</h4>
+      <dl class="detail-list vertical">
+        <div><dt>担当</dt><dd>${escapeHtml(candidate.owner)}</dd></div>
+        <div><dt>流入経路</dt><dd>${escapeHtml(candidate.source)}</dd></div>
+        <div><dt>希望年収</dt><dd>${candidate.desiredSalary.toLocaleString("ja-JP")}万円</dd></div>
+        <div><dt>入社可能</dt><dd>${escapeHtml(candidate.availability)}</dd></div>
+      </dl>
+    </div>
+    <div class="detail-fieldset">
+      <h4>職務要約</h4>
+      <p class="detail-copy">${escapeHtml(candidate.summary)}</p>
+      <div class="tag-list">${candidate.skills.map((skill) => `<span>${escapeHtml(skill)}</span>`).join("")}</div>
+    </div>
+    <div class="detail-fieldset">
+      <h4>推薦候補求人</h4>
+      <div class="recommendation">
+        ${recommendedJobs
+          .map(
+            (job) => `
+              <div class="match-row">
+                <span>${escapeHtml(job.title)} <small>${escapeHtml(getClientName(job.clientId, clients))}</small></span>
+                <b>${job.matchScore}%</b>
+              </div>
+            `
+          )
+          .join("")}
+      </div>
+    </div>
+    <div class="next-action">${escapeHtml(candidate.nextAction)}</div>
+  `;
 }
 
 function renderCandidateCard(candidate) {
