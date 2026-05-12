@@ -284,10 +284,7 @@ function render() {
               <input id="global-search" type="search" value="${escapeHtml(state.query)}" placeholder="氏名、求人、企業、スキルで検索" />
             </label>
           </header>
-          <main id="main-content" class="content">
-            ${state.notice ? `<div class="notice-banner">${escapeHtml(state.notice)}</div>` : ""}
-            ${renderView()}
-          </main>
+          <main id="main-content" class="content">${renderMainContent()}</main>
         </section>
       </div>
     </div>
@@ -295,6 +292,13 @@ function render() {
 
   bindShellEvents();
   bindDynamicEvents();
+}
+
+function renderMainContent() {
+  return `
+    ${state.notice ? `<div class="notice-banner">${escapeHtml(state.notice)}</div>` : ""}
+    ${renderView()}
+  `;
 }
 
 function bindShellEvents() {
@@ -315,74 +319,79 @@ function bindShellEvents() {
 }
 
 function bindDynamicEvents() {
-  document.querySelectorAll("#main-content [data-view]").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.view = button.dataset.view;
-      render();
-    });
-  });
+  const mainContent = document.querySelector("#main-content");
 
-  document.querySelectorAll("[data-job-id]").forEach((button) => {
-    button.addEventListener("click", () => {
+  mainContent.onclick = async (event) => {
+    const button = event.target.closest("button");
+    if (!button || !mainContent.contains(button)) {
+      return;
+    }
+
+    if (button.dataset.view) {
+      state.view = button.dataset.view;
+      state.createMode = "";
+      render();
+      return;
+    }
+
+    if (button.dataset.jobId) {
       state.createMode = "";
       state.selectedJobId = button.dataset.jobId;
-      document.querySelector("#main-content").innerHTML = renderView();
-      bindDynamicEvents();
-    });
-  });
+      mainContent.innerHTML = renderMainContent();
+      return;
+    }
 
-  document.querySelectorAll("[data-select-candidate-id]").forEach((button) => {
-    button.addEventListener("click", () => {
+    if (button.dataset.selectCandidateId) {
       state.createMode = "";
       state.selectedCandidateId = button.dataset.selectCandidateId;
-      document.querySelector("#main-content").innerHTML = renderView();
-      bindDynamicEvents();
-    });
-  });
+      mainContent.innerHTML = renderMainContent();
+      return;
+    }
 
-  document.querySelectorAll("[data-select-client-id]").forEach((button) => {
-    button.addEventListener("click", () => {
+    if (button.dataset.selectClientId) {
       state.createMode = "";
       state.selectedClientId = button.dataset.selectClientId;
-      document.querySelector("#main-content").innerHTML = renderView();
-      bindDynamicEvents();
-    });
-  });
+      mainContent.innerHTML = renderMainContent();
+      return;
+    }
 
-  document.querySelectorAll("[data-stage-select]").forEach((select) => {
-    select.addEventListener("change", async () => {
-      await mutateWorkspace(`/api/candidates/${select.dataset.candidateId}/stage`, { stage: select.value });
-    });
-  });
-
-  document.querySelectorAll("[data-task-toggle]").forEach((button) => {
-    button.addEventListener("click", async () => {
+    if (button.dataset.taskToggle !== undefined) {
       await mutateWorkspace(`/api/tasks/${button.dataset.taskId}/toggle`);
-    });
-  });
+      return;
+    }
 
-  document.querySelectorAll("[data-edit-form]").forEach((form) => {
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      if (form.dataset.createType) {
-        state.query = "";
-      }
-      await mutateWorkspace(form.dataset.endpoint, formPayload(form), {
-        method: form.dataset.method ?? "PATCH",
-        notice: form.dataset.createType ? "追加しました" : "保存しました"
-      });
-    });
-  });
-
-  document.querySelectorAll("[data-create-record]").forEach((button) => {
-    button.addEventListener("click", () => {
+    if (button.dataset.createRecord) {
       state.notice = "";
       state.error = "";
       state.createMode = button.dataset.createRecord;
-      document.querySelector("#main-content").innerHTML = renderView();
-      bindDynamicEvents();
+      mainContent.innerHTML = renderMainContent();
+    }
+  };
+
+  mainContent.onchange = async (event) => {
+    const select = event.target.closest("[data-stage-select]");
+    if (!select || !mainContent.contains(select)) {
+      return;
+    }
+
+    await mutateWorkspace(`/api/candidates/${select.dataset.candidateId}/stage`, { stage: select.value });
+  };
+
+  mainContent.onsubmit = async (event) => {
+    const form = event.target.closest("[data-edit-form]");
+    if (!form || !mainContent.contains(form)) {
+      return;
+    }
+
+    event.preventDefault();
+    if (form.dataset.createType) {
+      state.query = "";
+    }
+    await mutateWorkspace(form.dataset.endpoint, formPayload(form), {
+      method: form.dataset.method ?? "PATCH",
+      notice: form.dataset.createType ? "追加しました" : "保存しました"
     });
-  });
+  };
 }
 
 function renderView() {

@@ -87,7 +87,8 @@ async function serveStatic(publicDir, request, response, pathname) {
   }
 
   response.writeHead(200, {
-    "content-type": contentTypes.get(extname(filePath)) ?? "application/octet-stream"
+    "content-type": contentTypes.get(extname(filePath)) ?? "application/octet-stream",
+    "cache-control": "no-store"
   });
 
   if (request.method === "HEAD") {
